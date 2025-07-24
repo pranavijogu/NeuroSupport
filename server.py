@@ -4,6 +4,7 @@ import requests
 import os
 from math import radians, sin, cos, sqrt, atan2
 from dotenv import load_dotenv
+from transformers import pipeline # Add this import
 
 load_dotenv()
 
@@ -12,8 +13,66 @@ app = Flask(__name__)
 # Apply CORS with max permissiveness for development
 CORS(app, resources={r"/*": {"origins": "*"}})
 
+# Initialize emotion analysis pipeline (load model once)
+# This model specifically detects emotions like anger, joy, sadness, etc.
+emotion_analyzer = None # Renamed from sentiment_analyzer for clarity
+try:
+    # Using a model specifically fine-tuned for emotion detection
+    emotion_analyzer = pipeline('sentiment-analysis', model="j-hartmann/emotion-english-distilroberta-base")
+    print("Emotion analysis model loaded successfully.")
+except Exception as e:
+    print(f"Error loading emotion analysis model: {e}")
+    print("Please ensure you have 'transformers' and a compatible deep learning framework (like PyTorch) installed.")
+    print("The /api/detect-emotion endpoint will not function until this is resolved.")
+
+
+@app.route('/api/detect-emotion', methods=['OPTIONS', 'POST'])
+def detect_emotion():
+    """
+    API endpoint to detect emotion from user text using a pre-trained emotion analysis model.
+    """
+    if request.method == 'OPTIONS':
+        # Handle CORS preflight request
+        response = jsonify({'status': 'ok'})
+        return response
+
+    data = request.get_json()
+    user_text = data.get('text', '')
+
+    if not user_text:
+        return jsonify({'error': 'No text provided for emotion detection'}), 400
+
+    # Explicitly check if the emotion_analyzer was loaded successfully
+    if emotion_analyzer: # Changed from sentiment_analyzer
+        try:
+            print(f"Received text for emotion detection: '{user_text}'") # Debugging log
+            # Perform emotion analysis
+            result = emotion_analyzer(user_text)[0] # Changed from sentiment_analyzer
+            emotion_label = result['label'] # e.g., 'joy', 'sadness', 'anger', 'neutral'
+            emotion_score = result['score']
+
+            # Directly use the label from the emotion model
+            detected_emotion = emotion_label 
+
+            return jsonify({
+                'text': user_text,
+                'detected_label': emotion_label, # The raw label from the model (e.g., 'joy')
+                'confidence': emotion_score,
+                'emotion': detected_emotion # Your interpreted emotion
+            })
+        except Exception as e:
+            print(f"Error during emotion analysis: {e}")
+            return jsonify({'error': 'Error processing emotion detection'}), 500
+    else:
+        # Return 503 if the model failed to load at startup
+        return jsonify({'error': 'Emotion detection model not loaded or failed to initialize'}), 503
+
 @app.route('/api/search-resources', methods=['OPTIONS', 'POST'])
 def search_resources():
+    """
+    API endpoint to search for local resources based on location and type.
+    This function remains unchanged from your original implementation.
+    """
     # Explicitly handle OPTIONS requests
     if request.method == 'OPTIONS':
         response = jsonify({'status': 'ok'})
@@ -118,6 +177,10 @@ def search_resources():
         return jsonify({'error': str(e)}), 500
 
 def calculate_distance(lat1, lon1, lat2, lon2):
+    """
+    Calculates the distance between two geographical points using the Haversine formula.
+    This function remains unchanged from your original implementation.
+    """
     # Convert latitude and longitude from degrees to radians
     lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
     
